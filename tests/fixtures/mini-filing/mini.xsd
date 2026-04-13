@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:xbrli="http://www.xbrl.org/2003/instance"
+           xmlns:us-gaap="http://fasb.org/us-gaap/2023"
+           targetNamespace="http://example.com/ext">
+  <xs:element name="Liabilities" xbrli:balance="credit" xbrli:periodType="instant" type="xs:decimal"/>
+  <xs:element name="Deposits" xbrli:balance="credit" xbrli:periodType="instant" type="xs:decimal"/>
+  <xs:element name="OtherLiabilities" xbrli:balance="credit" xbrli:periodType="instant" type="xs:decimal"/>
+  <xs:element name="LossOnDisposal" xbrli:balance="debit" xbrli:periodType="duration" type="xs:decimal"/>
+</xs:schema>
