@@ -438,3 +438,70 @@ def find_filing(ticker: str, filing_name: str, issue_time: str) -> FilingLocatio
         files=files,
         found=True,
     )
+
+
+@mcp.tool(
+    description="Extract numeric facts for a concept whose context period exactly "
+    "matches the requested period. Period grammar: 'YYYY-MM-DD' (instant), "
+    "'YYYY-MM-DD to YYYY-MM-DD' (duration), 'FYYYYY' (calendar-year duration — "
+    "non-December fiscal years must use explicit ranges), 'QN YYYY'. Returns "
+    "matched facts ranked by non-dimensional first, plus all distinct periods "
+    "found for this concept to help diagnose period misses."
+)
+def get_facts(filing_path: str, concept_id: str, period: str) -> FactsResult:
+    normalized = _normalize_concept(concept_id)
+    parsed_period = _parse_period(period)
+    htm_path = _pick_file(filing_path, "*_htm.xml")
+    instance = _parse_instance(htm_path)
+
+    all_periods: set[str] = set()
+    candidates: list[Fact] = []
+    for qname, value, ctx_ref, unit_ref, decimals in instance.facts:
+        if qname != normalized:
+            continue
+        ctx = instance.contexts.get(ctx_ref)
+        if ctx is None:
+            continue
+        all_periods.add(ctx.canonical_period)
+        if ctx.period_kind != parsed_period.kind:
+            continue
+        if ctx.start != parsed_period.start or ctx.end != parsed_period.end:
+            continue
+        candidates.append(Fact(
+            value=value,
+            context_ref=ctx_ref,
+            period_type=ctx.period_kind,
+            period=ctx.canonical_period,
+            dimensions={a: m for a, m in ctx.dimensions},
+            unit_ref=unit_ref,
+            decimals=decimals,
+        ))
+
+    def _numeric_ok(f: Fact) -> int:
+        try:
+            float(f.value)
+            return 0
+        except ValueError:
+            return 1
+
+    candidates.sort(key=lambda f: (len(f.dimensions) > 0, _numeric_ok(f)))
+
+    return FactsResult(
+        concept_id=normalized,
+        requested_period=period,
+        requested_period_canonical=parsed_period.canonical,
+        matched=candidates,
+        all_periods_found=sorted(all_periods),
+    )
+
+
+def _pick_file(filing_path: str, glob: str) -> str:
+    """Pick the single file matching `glob` in `filing_path`, raising if not exactly one."""
+    matches = list(Path(filing_path).glob(glob))
+    if glob == "*.xsd":
+        matches = [m for m in matches if "_" not in m.stem] or matches
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"expected exactly one file matching {glob} in {filing_path}, found {len(matches)}"
+        )
+    return str(matches[0])
