@@ -262,3 +262,55 @@ def _parse_instance_cached(htm_path: str) -> _ParsedInstance:
         fact_tuples.append((qname, value, context_ref, elem.get("unitRef"), elem.get("decimals")))
 
     return _ParsedInstance(facts=tuple(fact_tuples), contexts=contexts)
+
+
+@dataclass(frozen=True)
+class _CalArc:
+    role: str
+    parent: str    # concept, colon form
+    child: str     # concept, colon form
+    weight: float
+    order: Optional[float]
+
+
+@functools.lru_cache(maxsize=32)
+def _parse_cal_cached(cal_path: str) -> tuple[_CalArc, ...]:
+    """Parse a calculation linkbase, returning resolved arcs.
+
+    Locator labels are scoped PER calculationLink (role), not globally.
+    href fragments like `...#us-gaap_Liabilities` are converted to
+    `us-gaap:Liabilities`.
+    """
+    tree = ET.parse(cal_path)
+    root = tree.getroot()
+    arcs: list[_CalArc] = []
+
+    for link in root.findall(f"{{{_LINK_NS}}}calculationLink"):
+        role = link.get(f"{{{_XLINK_NS}}}role", "")
+        label_to_concept: dict[str, str] = {}
+        for loc in link.findall(f"{{{_LINK_NS}}}loc"):
+            label = loc.get(f"{{{_XLINK_NS}}}label", "")
+            href = loc.get(f"{{{_XLINK_NS}}}href", "")
+            frag = href.split("#", 1)[-1] if "#" in href else href
+            label_to_concept[label] = _normalize_concept(frag)
+
+        for arc in link.findall(f"{{{_LINK_NS}}}calculationArc"):
+            from_label = arc.get(f"{{{_XLINK_NS}}}from", "")
+            to_label = arc.get(f"{{{_XLINK_NS}}}to", "")
+            parent = label_to_concept.get(from_label)
+            child = label_to_concept.get(to_label)
+            if not parent or not child:
+                continue
+            weight = float(arc.get("weight", "1.0"))
+            order_str = arc.get("order")
+            order = float(order_str) if order_str is not None else None
+            arcs.append(_CalArc(role=role, parent=parent, child=child, weight=weight, order=order))
+
+    return tuple(arcs)
+
+
+def _parse_cal(cal_path: str) -> tuple[_CalArc, ...]:
+    """Parse a calculation linkbase. Cached via absolute path."""
+    return _parse_cal_cached(str(Path(cal_path).resolve()))
+
+    return _ParsedInstance(facts=tuple(fact_tuples), contexts=contexts)
