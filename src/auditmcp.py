@@ -367,3 +367,74 @@ def _load_taxonomy_core_cached(taxonomy_dir: str) -> dict[str, dict]:
 def _load_taxonomy_core(taxonomy_dir: str) -> dict[str, dict]:
     """Load taxonomy core chunks. Cached via absolute path."""
     return _load_taxonomy_core_cached(str(Path(taxonomy_dir).resolve()))
+
+
+# ---------------------------------------------------------------------------
+# FastMCP server init (Task 9)
+# ---------------------------------------------------------------------------
+import os
+from fastmcp import FastMCP
+
+try:
+    import logfire
+    logfire.configure(service_name="auditmcp")
+    logfire.instrument_mcp()
+except Exception:
+    pass
+
+mcp = FastMCP("XBRL Auditing Tools")
+
+
+_REQUIRED_FILE_GLOBS = {
+    "htm": "*_htm.xml",
+    "cal": "*_cal.xml",
+    "def": "*_def.xml",
+    "lab": "*_lab.xml",
+    "pre": "*_pre.xml",
+    "xsd": "*.xsd",
+}
+
+
+def _data_root() -> Path:
+    root = os.environ.get("AUDITMCP_DATA_ROOT")
+    if not root:
+        raise RuntimeError("AUDITMCP_DATA_ROOT is not set")
+    return Path(root)
+
+
+@mcp.tool(
+    description="Locate the folder for a given XBRL filing under "
+    "$AUDITMCP_DATA_ROOT/XBRL. Returns the absolute path, the derived filing "
+    "year, and a map of the six XBRL files (htm, cal, xsd, def, lab, pre). "
+    "Sets found=false with a diagnostic message if the folder or any required "
+    "file is missing."
+)
+def find_filing(ticker: str, filing_name: str, issue_time: str) -> FilingLocation:
+    folder_name = f"{filing_name}-{ticker}-{issue_time}"
+    filing_dir = _data_root() / "XBRL" / folder_name
+    if not filing_dir.is_dir():
+        return FilingLocation(found=False, message=f"folder not found: {filing_dir}")
+
+    files: dict[str, str] = {}
+    for key, glob in _REQUIRED_FILE_GLOBS.items():
+        matches = list(filing_dir.glob(glob))
+        if key == "xsd":
+            matches = [m for m in matches if "_" not in m.stem] or matches
+        if len(matches) != 1:
+            return FilingLocation(
+                found=False,
+                message=f"expected exactly one file matching {glob} in {filing_dir}, found {len(matches)}",
+            )
+        files[key] = str(matches[0])
+
+    try:
+        filing_year = int(issue_time[:4])
+    except ValueError:
+        return FilingLocation(found=False, message=f"bad issue_time: {issue_time!r}")
+
+    return FilingLocation(
+        filing_path=str(filing_dir),
+        filing_year=filing_year,
+        files=files,
+        found=True,
+    )
