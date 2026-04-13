@@ -79,3 +79,75 @@ def _parse_period(period: str) -> ParsedPeriod:
         f"Unparseable period {period!r}. Accepted formats: "
         "'YYYY-MM-DD', 'YYYY-MM-DD to YYYY-MM-DD', 'FYYYYY', 'QN YYYY'."
     )
+
+
+# ---------------------------------------------------------------------------
+# Pydantic return models (Task 5)
+# ---------------------------------------------------------------------------
+from typing import Literal, Optional
+from pydantic import BaseModel, Field
+
+
+class FilingLocation(BaseModel):
+    filing_path: str = ""
+    filing_year: int = 0
+    files: dict[str, str] = Field(default_factory=dict)
+    found: bool = False
+    message: str = ""
+
+
+class Fact(BaseModel):
+    value: str
+    context_ref: str
+    period_type: Literal["instant", "duration"]
+    period: str  # canonical
+    dimensions: dict[str, str] = Field(default_factory=dict)
+    unit_ref: Optional[str] = None
+    decimals: Optional[str] = None
+
+
+class FactsResult(BaseModel):
+    concept_id: str
+    requested_period: str
+    requested_period_canonical: str
+    matched: list[Fact]
+    all_periods_found: list[str]
+
+
+class CalChild(BaseModel):
+    concept: str
+    weight: float
+    order: Optional[float] = None
+
+
+class ParentRole(BaseModel):
+    role: str
+    children: list[CalChild]
+
+
+class ChildRole(BaseModel):
+    role: str
+    parent: str
+    siblings: list[CalChild]
+
+
+class CalculationNetwork(BaseModel):
+    concept_id: str
+    as_parent: list[ParentRole]
+    as_child: list[ChildRole]
+    is_isolated: bool
+    roles_scanned: list[str]
+
+
+class ConceptMetadata(BaseModel):
+    concept_id: str
+    balance: Literal["debit", "credit", "none", "unknown"]
+    period_type: Literal["instant", "duration", "unknown"]
+    label: Optional[str] = None
+    source: Literal["xsd", "taxonomy", "not_found"]
+    is_directional_hint: bool
+
+
+class WriteResult(BaseModel):
+    output_path: str
+    bytes_written: int
