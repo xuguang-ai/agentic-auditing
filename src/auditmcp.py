@@ -312,5 +312,3 @@ def _parse_cal_cached(cal_path: str) -> tuple[_CalArc, ...]:
 def _parse_cal(cal_path: str) -> tuple[_CalArc, ...]:
     """Parse a calculation linkbase. Cached via absolute path."""
     return _parse_cal_cached(str(Path(cal_path).resolve()))
-
-    return _ParsedInstance(facts=tuple(fact_tuples), contexts=contexts)
