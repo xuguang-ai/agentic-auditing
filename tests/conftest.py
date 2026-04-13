@@ -11,6 +11,3 @@ def fixtures_dir() -> Path:
 def mini_filing_dir(fixtures_dir: Path) -> Path:
     return fixtures_dir / "mini-filing"
 
-@pytest.fixture
-def taxonomy_dir(fixtures_dir: Path) -> Path:
-    return fixtures_dir
