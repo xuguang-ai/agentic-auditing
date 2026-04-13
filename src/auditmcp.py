@@ -312,3 +312,58 @@ def _parse_cal_cached(cal_path: str) -> tuple[_CalArc, ...]:
 def _parse_cal(cal_path: str) -> tuple[_CalArc, ...]:
     """Parse a calculation linkbase. Cached via absolute path."""
     return _parse_cal_cached(str(Path(cal_path).resolve()))
+
+
+import json
+
+
+@functools.lru_cache(maxsize=32)
+def _parse_xsd_cached(xsd_path: str) -> dict[str, dict[str, str]]:
+    """Parse an extension schema, returning `{local_name: {balance, periodType}}`."""
+    tree = ET.parse(xsd_path)
+    root = tree.getroot()
+    xbrli_balance = f"{{{_XBRLI_NS}}}balance"
+    xbrli_period = f"{{{_XBRLI_NS}}}periodType"
+    out: dict[str, dict[str, str]] = {}
+    for elem in root.iter():
+        if _localname(elem.tag) != "element":
+            continue
+        name = elem.get("name")
+        if not name:
+            continue
+        info: dict[str, str] = {}
+        if bal := elem.get(xbrli_balance):
+            info["balance"] = bal
+        if pt := elem.get(xbrli_period):
+            info["periodType"] = pt
+        if info:
+            out[name] = info
+    return out
+
+
+def _parse_xsd(xsd_path: str) -> dict[str, dict[str, str]]:
+    """Parse an extension schema. Cached via absolute path."""
+    return _parse_xsd_cached(str(Path(xsd_path).resolve()))
+
+
+@functools.lru_cache(maxsize=16)
+def _load_taxonomy_core_cached(taxonomy_dir: str) -> dict[str, dict]:
+    """Load `chunks_core.jsonl` from `gaap_chunks_{year}/` dir into `{concept_id: row}`."""
+    path = Path(taxonomy_dir) / "chunks_core.jsonl"
+    out: dict[str, dict] = {}
+    if not path.exists():
+        return out
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if concept := row.get("concept"):
+                out[_normalize_concept(concept)] = row
+    return out
+
+
+def _load_taxonomy_core(taxonomy_dir: str) -> dict[str, dict]:
+    """Load taxonomy core chunks. Cached via absolute path."""
+    return _load_taxonomy_core_cached(str(Path(taxonomy_dir).resolve()))
