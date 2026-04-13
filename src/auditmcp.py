@@ -151,3 +151,116 @@ class ConceptMetadata(BaseModel):
 class WriteResult(BaseModel):
     output_path: str
     bytes_written: int
+
+
+# ---------------------------------------------------------------------------
+# Instance-document parser (Task 6)
+# ---------------------------------------------------------------------------
+import functools
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+# Namespace URIs that appear in instance documents we need to recognize.
+_XBRLI_NS = "http://www.xbrl.org/2003/instance"
+_XLINK_NS = "http://www.w3.org/1999/xlink"
+_LINK_NS = "http://www.xbrl.org/2003/linkbase"
+_XBRLDI_NS = "http://xbrl.org/2006/xbrldi"
+
+
+def _localname(tag: str) -> str:
+    """Strip `{namespace}` from an ET tag, leaving the local name."""
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def _prefix_for_uri(root: ET.Element, uri: str) -> Optional[str]:
+    """Return a prefix registered on the root element for `uri`, or None."""
+    for k, v in root.attrib.items():
+        if k.startswith("xmlns:") and v == uri:
+            return k.split(":", 1)[1]
+    return None
+
+
+@dataclass(frozen=True)
+class _ContextInfo:
+    period_kind: Literal["instant", "duration"]
+    start: str
+    end: str
+    dimensions: tuple  # sorted (axis_qname, member_qname) pairs
+
+    @property
+    def canonical_period(self) -> str:
+        return self.start if self.period_kind == "instant" else f"{self.start}/{self.end}"
+
+
+@dataclass(frozen=True)
+class _ParsedInstance:
+    facts: tuple  # fact tuple: (concept_qname_colon_form, value, context_ref, unit_ref, decimals)
+    contexts: dict
+
+
+@functools.lru_cache(maxsize=32)
+def _parse_instance(htm_path: str) -> _ParsedInstance:
+    """Parse an XBRL instance document. Cached by absolute path."""
+    # Collect namespace prefix → URI mappings before parsing the tree.
+    # ET does not expose xmlns: attributes via root.attrib; iterparse with
+    # "start-ns" events is the only reliable way to capture them.
+    uri_to_prefix: dict[str, str] = {}
+    for event, (prefix, uri) in ET.iterparse(htm_path, events=("start-ns",)):
+        if prefix:  # skip the default namespace (empty prefix)
+            uri_to_prefix[uri] = prefix
+
+    tree = ET.parse(htm_path)
+    root = tree.getroot()
+
+    contexts: dict[str, _ContextInfo] = {}
+    for ctx in root.findall(f"{{{_XBRLI_NS}}}context"):
+        cid = ctx.get("id", "")
+        period = ctx.find(f"{{{_XBRLI_NS}}}period")
+        if period is None:
+            continue
+        instant = period.find(f"{{{_XBRLI_NS}}}instant")
+        if instant is not None:
+            start = end = (instant.text or "").strip()
+            kind: Literal["instant", "duration"] = "instant"
+        else:
+            sd = period.find(f"{{{_XBRLI_NS}}}startDate")
+            ed = period.find(f"{{{_XBRLI_NS}}}endDate")
+            if sd is None or ed is None:
+                continue
+            start = (sd.text or "").strip()
+            end = (ed.text or "").strip()
+            kind = "duration"
+
+        dims: list[tuple[str, str]] = []
+        segment = ctx.find(f"{{{_XBRLI_NS}}}entity/{{{_XBRLI_NS}}}segment")
+        scenario = ctx.find(f"{{{_XBRLI_NS}}}scenario")
+        for container in (segment, scenario):
+            if container is None:
+                continue
+            for member in container.findall(f"{{{_XBRLDI_NS}}}explicitMember"):
+                axis = member.get("dimension", "")
+                val = (member.text or "").strip()
+                if axis and val:
+                    dims.append((axis, val))
+        contexts[cid] = _ContextInfo(
+            period_kind=kind, start=start, end=end,
+            dimensions=tuple(sorted(dims)),
+        )
+
+    fact_tuples: list[tuple] = []
+    for elem in root:
+        ns_uri = elem.tag.split("}", 1)[0][1:] if "}" in elem.tag else ""
+        if ns_uri in (_XBRLI_NS, _LINK_NS):
+            # contexts, units, schemaRefs, etc.
+            continue
+        context_ref = elem.get("contextRef")
+        if not context_ref:
+            continue
+        prefix = uri_to_prefix.get(ns_uri)
+        local = _localname(elem.tag)
+        qname = f"{prefix}:{local}" if prefix else local
+        value = (elem.text or "").strip()
+        fact_tuples.append((qname, value, context_ref, elem.get("unitRef"), elem.get("decimals")))
+
+    return _ParsedInstance(facts=tuple(fact_tuples), contexts=contexts)
