@@ -173,13 +173,6 @@ def _localname(tag: str) -> str:
     return tag.split("}", 1)[-1] if "}" in tag else tag
 
 
-def _prefix_for_uri(root: ET.Element, uri: str) -> Optional[str]:
-    """Return a prefix registered on the root element for `uri`, or None."""
-    for k, v in root.attrib.items():
-        if k.startswith("xmlns:") and v == uri:
-            return k.split(":", 1)[1]
-    return None
-
 
 @dataclass(frozen=True)
 class _ContextInfo:
@@ -199,8 +192,13 @@ class _ParsedInstance:
     contexts: dict
 
 
-@functools.lru_cache(maxsize=32)
 def _parse_instance(htm_path: str) -> _ParsedInstance:
+    """Parse an XBRL instance document. Normalizes path to absolute before caching."""
+    return _parse_instance_cached(str(Path(htm_path).resolve()))
+
+
+@functools.lru_cache(maxsize=32)
+def _parse_instance_cached(htm_path: str) -> _ParsedInstance:
     """Parse an XBRL instance document. Cached by absolute path."""
     # Collect namespace prefix → URI mappings before parsing the tree.
     # ET does not expose xmlns: attributes via root.attrib; iterparse with
