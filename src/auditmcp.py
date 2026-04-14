@@ -630,3 +630,47 @@ def get_concept_metadata(
         source="not_found",
         is_directional_hint=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 13: write_audit_result
+# ---------------------------------------------------------------------------
+import re as _re
+
+
+def _sanitize_model(model: str) -> str:
+    return _re.sub(r"[^A-Za-z0-9._-]", "-", model)
+
+
+@mcp.tool(
+    description="Write the final single-line audit result JSON "
+    "({extracted_value, calculated_value}) to "
+    "{output_dir}/{agent_name}_auditing_{filing_name}_{ticker}_{issue_time}_{id}_{model}.json. "
+    "Numeric values are written verbatim as strings (no rounding). Overwrites "
+    "if the file exists; creates output_dir if missing."
+)
+def write_audit_result(
+    output_dir: str,
+    agent_name: str,
+    filing_name: str,
+    ticker: str,
+    issue_time: str,
+    id: str,
+    model: str,
+    extracted_value: str,
+    calculated_value: str,
+) -> WriteResult:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    fname = (
+        f"{agent_name}_auditing_{filing_name}_{ticker}_{issue_time}_"
+        f"{id}_{_sanitize_model(model)}.json"
+    )
+    path = out / fname
+    payload = json.dumps(
+        {"extracted_value": extracted_value, "calculated_value": calculated_value},
+        separators=(", ", ": "),
+    )
+    data = payload + "\n"
+    path.write_text(data)
+    return WriteResult(output_path=str(path), bytes_written=len(data.encode()))
