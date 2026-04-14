@@ -549,3 +549,84 @@ def get_calculation_network(filing_path: str, concept_id: str) -> CalculationNet
         is_isolated=not as_parent and not as_child,
         roles_scanned=roles_scanned,
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 12: get_concept_metadata
+# ---------------------------------------------------------------------------
+
+_DIRECTIONAL_KEYWORDS = (
+    "expense", "expenses", "loss", "losses", "impairment", "depreciation",
+    "amortization", "deduction", "contra", "writedown", "writeoff",
+)
+
+
+def _is_directional_hint(local_name: str, label: Optional[str], balance: str) -> bool:
+    haystack = f"{local_name} {label or ''}".lower()
+    if balance == "debit" and any(k in haystack for k in _DIRECTIONAL_KEYWORDS):
+        return True
+    if balance == "credit" and "contra" in haystack:
+        return True
+    return False
+
+
+@mcp.tool(
+    description="Return balance type, period type, label, and a directional "
+    "hint for a concept. Looks up the filing's extension schema first, then "
+    "falls back to gaap_chunks_{taxonomy_year}/chunks_core.jsonl under "
+    "$AUDITMCP_DATA_ROOT/US_GAAP_Taxonomy/. is_directional_hint is a "
+    "heuristic (expense/loss/contra-style keywords + balance); the agent "
+    "makes the final Case B determination."
+)
+def get_concept_metadata(
+    filing_path: str, concept_id: str, taxonomy_year: int
+) -> ConceptMetadata:
+    normalized = _normalize_concept(concept_id)
+    local = normalized.split(":", 1)[-1]
+
+    # 1) xsd lookup
+    try:
+        xsd_path = _pick_file(filing_path, "*.xsd")
+        xsd_map = _parse_xsd(xsd_path)
+    except FileNotFoundError:
+        xsd_map = {}
+    if local in xsd_map:
+        info = xsd_map[local]
+        bal = info.get("balance", "unknown")
+        pt = info.get("periodType", "unknown")
+        label = None
+        return ConceptMetadata(
+            concept_id=normalized,
+            balance=bal if bal in ("debit", "credit", "none") else "unknown",
+            period_type=pt if pt in ("instant", "duration") else "unknown",
+            label=label,
+            source="xsd",
+            is_directional_hint=_is_directional_hint(local, label, bal),
+        )
+
+    # 2) taxonomy fallback
+    tax_dir = _data_root() / "US_GAAP_Taxonomy" / f"gaap_chunks_{taxonomy_year}"
+    tax_map = _load_taxonomy_core(str(tax_dir))
+    row = tax_map.get(normalized)
+    if row:
+        bal = row.get("balance", "unknown")
+        pt = row.get("period_type", "unknown")
+        label = row.get("label")
+        return ConceptMetadata(
+            concept_id=normalized,
+            balance=bal if bal in ("debit", "credit", "none") else "unknown",
+            period_type=pt if pt in ("instant", "duration") else "unknown",
+            label=label,
+            source="taxonomy",
+            is_directional_hint=_is_directional_hint(local, label, bal),
+        )
+
+    # 3) not found
+    return ConceptMetadata(
+        concept_id=normalized,
+        balance="unknown",
+        period_type="unknown",
+        label=None,
+        source="not_found",
+        is_directional_hint=False,
+    )
