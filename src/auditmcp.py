@@ -505,3 +505,47 @@ def _pick_file(filing_path: str, glob: str) -> str:
             f"expected exactly one file matching {glob} in {filing_path}, found {len(matches)}"
         )
     return str(matches[0])
+
+
+@mcp.tool(
+    description="Return the calculation-linkbase relationships for a concept: "
+    "roles where it is the summation parent (with weighted children) and roles "
+    "where it appears as a child (with parent and sibling weights, including "
+    "its own weight). is_isolated=true when the concept has no calculation "
+    "relationships at all — a Case D hint for the agent."
+)
+def get_calculation_network(filing_path: str, concept_id: str) -> CalculationNetwork:
+    normalized = _normalize_concept(concept_id)
+    cal_path = _pick_file(filing_path, "*_cal.xml")
+    arcs = _parse_cal(cal_path)
+
+    roles_scanned = sorted({a.role for a in arcs})
+
+    by_role: dict[str, list[_CalArc]] = {}
+    for a in arcs:
+        by_role.setdefault(a.role, []).append(a)
+
+    as_parent: list[ParentRole] = []
+    as_child: list[ChildRole] = []
+
+    for role, role_arcs in by_role.items():
+        parent_arcs = [a for a in role_arcs if a.parent == normalized]
+        if parent_arcs:
+            children = [CalChild(concept=a.child, weight=a.weight, order=a.order)
+                        for a in parent_arcs]
+            as_parent.append(ParentRole(role=role, children=children))
+
+        child_arcs = [a for a in role_arcs if a.child == normalized]
+        for ca in child_arcs:
+            sibling_arcs = [a for a in role_arcs if a.parent == ca.parent]
+            siblings = [CalChild(concept=a.child, weight=a.weight, order=a.order)
+                        for a in sibling_arcs]
+            as_child.append(ChildRole(role=role, parent=ca.parent, siblings=siblings))
+
+    return CalculationNetwork(
+        concept_id=normalized,
+        as_parent=as_parent,
+        as_child=as_child,
+        is_isolated=not as_parent and not as_child,
+        roles_scanned=roles_scanned,
+    )
