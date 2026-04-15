@@ -16,6 +16,10 @@
     <entity><identifier scheme="http://www.sec.gov/CIK">0000000001</identifier></entity>
     <period><instant>2022-12-31</instant></period>
   </context>
+  <context id="c_inst_20240331">
+    <entity><identifier scheme="http://www.sec.gov/CIK">0000000001</identifier></entity>
+    <period><instant>2024-03-31</instant></period>
+  </context>
 
   <us-gaap:Liabilities contextRef="c_inst_20231231" unitRef="usd" decimals="-3">1000000</us-gaap:Liabilities>
   <us-gaap:Deposits contextRef="c_inst_20231231" unitRef="usd" decimals="-3">600000</us-gaap:Deposits>
@@ -25,4 +29,15 @@
 
   <us-gaap:LossOnDisposal contextRef="c_2023" unitRef="usd" decimals="-3">-50000</us-gaap:LossOnDisposal>
   <us-gaap:NonCalcItem contextRef="c_2023" unitRef="usd" decimals="-3">12345</us-gaap:NonCalcItem>
+
+  <!-- Issue B coverage: identical fact reported twice (e.g. inline-XBRL flattening
+       of the same number in two places of the human-readable HTML).
+       Same qname + contextRef + value + dimensions + unitRef + decimals → must dedupe to 1. -->
+  <us-gaap:Deposits contextRef="c_inst_20240331" unitRef="usd" decimals="-3">500000</us-gaap:Deposits>
+  <us-gaap:Deposits contextRef="c_inst_20240331" unitRef="usd" decimals="-3">500000</us-gaap:Deposits>
+
+  <!-- Issue B coverage: same value but different `decimals` attribute.
+       Conservative dedup: treat as distinct, keep both. -->
+  <us-gaap:OtherLiabilities contextRef="c_inst_20240331" unitRef="usd" decimals="-3">200000</us-gaap:OtherLiabilities>
+  <us-gaap:OtherLiabilities contextRef="c_inst_20240331" unitRef="usd" decimals="-6">200000</us-gaap:OtherLiabilities>
 </xbrl>

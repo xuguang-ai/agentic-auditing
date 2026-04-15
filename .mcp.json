@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "auditmcp": {
+      "command": "/Users/xai/.local/bin/uv",
+      "args": [
+        "run",
+        "--directory",
+        "/Users/xai/Desktop/agentic-auditing",
+        "python",
+        "src/auditmcp.py"
+      ],
+      "env": {
+        "AUDITMCP_DATA_ROOT": "/Users/xai/Desktop/agentic-auditing/data/auditing"
+      }
+    }
+  }
+}

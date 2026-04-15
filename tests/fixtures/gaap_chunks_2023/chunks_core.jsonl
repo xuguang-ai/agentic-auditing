@@ -1,3 +1,3 @@
-{"concept": "us-gaap:Liabilities", "balance": "credit", "period_type": "instant", "label": "Liabilities"}
-{"concept": "us-gaap:LossOnDisposal", "balance": "debit", "period_type": "duration", "label": "Loss On Disposal Of Assets"}
-{"concept": "us-gaap:NonCalcItem", "balance": "none", "period_type": "duration", "label": "Non Calc Item"}
+{"concept_id": "us-gaap:Liabilities", "balance": "credit", "periodType": "instant", "label": "Liabilities"}
+{"concept_id": "us-gaap:LossOnDisposal", "balance": "debit", "periodType": "duration", "label": "Loss On Disposal Of Assets"}
+{"concept_id": "us-gaap:NonCalcItem", "balance": "", "periodType": "duration", "label": "Non Calc Item"}

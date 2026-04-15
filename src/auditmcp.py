@@ -354,7 +354,11 @@ def _parse_xsd(xsd_path: str) -> dict[str, dict[str, str]]:
 
 @functools.lru_cache(maxsize=16)
 def _load_taxonomy_core_cached(taxonomy_dir: str) -> dict[str, dict]:
-    """Load `chunks_core.jsonl` from `gaap_chunks_{year}/` dir into `{concept_id: row}`."""
+    """Load `chunks_core.jsonl` from `gaap_chunks_{year}/` dir into `{concept_id: row}`.
+
+    The production JSONL schema uses `concept_id` (not `concept`); accept both
+    so older fixtures and externally-generated chunks remain readable.
+    """
     path = Path(taxonomy_dir) / "chunks_core.jsonl"
     out: dict[str, dict] = {}
     if not path.exists():
@@ -365,7 +369,8 @@ def _load_taxonomy_core_cached(taxonomy_dir: str) -> dict[str, dict]:
             if not line:
                 continue
             row = json.loads(line)
-            if concept := row.get("concept"):
+            concept = row.get("concept_id") or row.get("concept")
+            if concept:
                 out[_normalize_concept(concept)] = row
     return out
 
@@ -453,6 +458,13 @@ def get_facts(filing_path: str, concept_id: str, period: str) -> FactsResult:
 
     all_periods: set[str] = set()
     candidates: list[Fact] = []
+    # Inline-XBRL flattening can emit the same fact twice when the human-
+    # readable HTML reports a number in two places (e.g. balance sheet AND
+    # footnote table). Collapse facts whose qname, context, value,
+    # dimensions, unit and `decimals` all match — the agent treats them as
+    # one. Conservative key: facts that differ on `decimals` are kept
+    # separate (different precision claims must be surfaced).
+    seen: set[tuple] = set()
     for qname, value, ctx_ref, unit_ref, decimals in instance.facts:
         if qname != normalized:
             continue
@@ -464,6 +476,10 @@ def get_facts(filing_path: str, concept_id: str, period: str) -> FactsResult:
             continue
         if ctx.start != parsed_period.start or ctx.end != parsed_period.end:
             continue
+        dedup_key = (value, ctx_ref, ctx.dimensions, unit_ref, decimals)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
         candidates.append(Fact(
             value=value,
             context_ref=ctx_ref,
@@ -606,16 +622,26 @@ def get_concept_metadata(
     tax_map = _load_taxonomy_core(str(tax_dir))
     row = tax_map.get(normalized)
     if row:
-        bal = row.get("balance", "unknown")
-        pt = row.get("period_type", "unknown")
+        # Production JSONL uses `periodType` (camelCase); fixtures may use
+        # `period_type`. Accept both. An empty `balance` string in the
+        # production export means "no XBRL balance attribute" — semantically
+        # equivalent to `"none"` (non-monetary / abstract concepts).
+        bal_raw = row.get("balance", "")
+        pt_raw = row.get("periodType") or row.get("period_type") or "unknown"
         label = row.get("label")
+        if bal_raw in ("debit", "credit"):
+            balance = bal_raw
+        elif bal_raw in ("", "none"):
+            balance = "none"
+        else:
+            balance = "unknown"
         return ConceptMetadata(
             concept_id=normalized,
-            balance=bal if bal in ("debit", "credit", "none") else "unknown",
-            period_type=pt if pt in ("instant", "duration") else "unknown",
+            balance=balance,
+            period_type=pt_raw if pt_raw in ("instant", "duration") else "unknown",
             label=label,
             source="taxonomy",
-            is_directional_hint=_is_directional_hint(local, label, bal),
+            is_directional_hint=_is_directional_hint(local, label, balance),
         )
 
     # 3) not found

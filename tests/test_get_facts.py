@@ -56,3 +56,31 @@ def test_get_facts_invalid_period_raises(mini_filing_dir):
             concept_id="us-gaap:Liabilities",
             period="sometime",
         )
+
+
+def test_get_facts_dedups_identical_duplicates(mini_filing_dir):
+    """Inline-XBRL flattening can emit the same fact twice. When qname,
+    contextRef, value, dimensions, unitRef and decimals all match, the
+    duplicates are the same fact and must collapse to one entry."""
+    res = get_facts(
+        filing_path=str(mini_filing_dir),
+        concept_id="us-gaap:Deposits",
+        period="2024-03-31",
+    )
+    assert len(res.matched) == 1
+    assert res.matched[0].value == "500000"
+    assert res.matched[0].decimals == "-3"
+
+
+def test_get_facts_keeps_facts_with_different_decimals(mini_filing_dir):
+    """Conservative dedup: facts that share value/context/dimensions/unit
+    but differ on `decimals` are NOT collapsed — different decimals encode
+    different precision claims and must be surfaced to the agent."""
+    res = get_facts(
+        filing_path=str(mini_filing_dir),
+        concept_id="us-gaap:OtherLiabilities",
+        period="2024-03-31",
+    )
+    assert len(res.matched) == 2
+    decimals_seen = {f.decimals for f in res.matched}
+    assert decimals_seen == {"-3", "-6"}
