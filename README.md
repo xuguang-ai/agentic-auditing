@@ -149,7 +149,7 @@ hint. Resolution order:
 | `period_type` | `instant` / `duration` / `unknown` | Sanity-check this against the period you're querying |
 | `label` | `str?` | Human-readable concept label |
 | `source` | `xsd` / `taxonomy` / `not_found` | |
-| `is_directional_hint` | `bool` | Heuristic: `True` when balance + label suggest a loss/expense/contra-style concept that must be filed positive (Case B) |
+| `is_directional_hint` | `bool` | Heuristic: `True` when balance + label suggest a Case B (loss/expense/contra-style concept that must be filed positive). Matches whole-word terms against `label + camel-split local_name` — e.g. `Decrease`/`Loss`/`Impairment`/`Withholding` with `balance=debit`, or `Treasury`/`Contra` with `balance=credit`. Excludes `IncreaseDecreaseInX` change-of-balance items and `AdjustmentsToReconcile*` summation parents. Label is always returned so the agent can make the final Case B call. |
 
 ### `write_audit_result(output_dir, agent_name, filing_name, ticker, issue_time, id, model, extracted_value, calculated_value) → WriteResult`
 
@@ -195,9 +195,18 @@ auditing one fact:
 5. write_audit_result(..., extracted_value, calculated_value)
 ```
 
-A concrete walkthrough on `10k-rdvt-20211231` for `us-gaap:Liabilities`
-at `2021-12-31` (Case A, four children sum to $4.947M = reported value)
-is in [`results/auditing/`](results/auditing/).
+Worked examples under [`results/auditing/`](results/auditing/):
+
+- `*_bt_1..10_*.json` — 10 audits on `10k-rrr-20231231` covering Case A
+  (Assets, Liabilities, CostsAndExpenses — summation parents), Case C
+  (Revenues, OperatingIncomeLoss — algebraic derivation), Case B+C
+  (InterestExpense), and Case D (a concept that's not even reported in
+  the filing; MCP flags this via `all_periods_found=[]`).
+- `*_demo_hard_1_*.json` — `StockholdersEquity` as a Case C child
+  (parent = `StockholdersEquityIncludingPortion…`, sibling = `MinorityInterest`).
+- `*_demo_hard_2_*.json` — `AdjustmentsRelatedToTaxWithholdingForShareBasedCompensation`
+  filed as `-14,721,000` but must be positive per XBRL directional semantics;
+  Case B sign-fix yields `14,721,000`.
 
 ---
 
@@ -205,7 +214,7 @@ is in [`results/auditing/`](results/auditing/).
 
 ```bash
 uv sync --extra dev
-uv run pytest -v          # 36 tests, ~1s
+uv run pytest -v          # 50 tests, ~1s
 ```
 
 Tests live in [`tests/`](tests/) with a self-contained mini filing under
@@ -215,7 +224,6 @@ production-shape `chunks_core.jsonl` excerpt under
 
 ---
 
-## Other skills in this repo
+## Skills
 
 - [`auditing/SKILL.md`](auditing/SKILL.md) — XBRL audit workflow (uses the MCP)
-- `trading/`, `pair_trading/`, `report_generation/`, `report_evaluation/`
