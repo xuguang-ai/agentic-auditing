@@ -195,18 +195,7 @@ auditing one fact:
 5. write_audit_result(..., extracted_value, calculated_value)
 ```
 
-Worked examples under [`results/auditing/`](results/auditing/):
-
-- `*_bt_1..10_*.json` — 10 audits on `10k-rrr-20231231` covering Case A
-  (Assets, Liabilities, CostsAndExpenses — summation parents), Case C
-  (Revenues, OperatingIncomeLoss — algebraic derivation), Case B+C
-  (InterestExpense), and Case D (a concept that's not even reported in
-  the filing; MCP flags this via `all_periods_found=[]`).
-- `*_demo_hard_1_*.json` — `StockholdersEquity` as a Case C child
-  (parent = `StockholdersEquityIncludingPortion…`, sibling = `MinorityInterest`).
-- `*_demo_hard_2_*.json` — `AdjustmentsRelatedToTaxWithholdingForShareBasedCompensation`
-  filed as `-14,721,000` but must be positive per XBRL directional semantics;
-  Case B sign-fix yields `14,721,000`.
+Audit results are written to `results/auditing/` (gitignored locally).
 
 ---
 
@@ -221,6 +210,14 @@ Tests live in [`tests/`](tests/) with a self-contained mini filing under
 [`tests/fixtures/mini-filing/`](tests/fixtures/mini-filing/) and a
 production-shape `chunks_core.jsonl` excerpt under
 [`tests/fixtures/gaap_chunks_2023/`](tests/fixtures/gaap_chunks_2023/).
+
+---
+
+## Ground truth
+
+[`ground_truth/agentic_audit_with_answer.csv`](ground_truth/agentic_audit_with_answer.csv)
+contains labelled audit cases for evaluation. Columns: `id`, `query`,
+`filing_name`, `ticker`, `issue_time`, `usgaap_concept`, `period`, `gt_answer`.
 
 ---
 
