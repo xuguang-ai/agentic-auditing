@@ -674,3 +674,7 @@ def write_audit_result(
     data = payload + "\n"
     path.write_text(data)
     return WriteResult(output_path=str(path), bytes_written=len(data.encode()))
+
+
+if __name__ == "__main__":
+    mcp.run()
