@@ -568,18 +568,59 @@ def get_calculation_network(filing_path: str, concept_id: str) -> CalculationNet
 # Task 12: get_concept_metadata
 # ---------------------------------------------------------------------------
 
-_DIRECTIONAL_KEYWORDS = (
-    "expense", "expenses", "loss", "losses", "impairment", "depreciation",
-    "amortization", "deduction", "contra", "writedown", "writeoff",
+# Tiered directional-keyword matching. The hint fires when the concept's
+# balance aligns with a tier AND a tier term appears as a whole word in
+# (label + local_name), AND no exclusion term is present. The exclusion list
+# guards against change-of-balance concepts like `IncreaseDecreaseInX` (whose
+# sign is not fixed by XBRL semantics) and reconciliation parents like
+# `AdjustmentsToReconcileNetIncomeLossToCash...` (summation, not directional).
+# The agent still makes the final Case B call — the returned `label` is the
+# authoritative signal.
+_DEBIT_DIRECTIONAL_TERMS = (
+    "loss", "losses",
+    "expense", "expenses",
+    "impairment", "impairments",
+    "depreciation", "depletion", "amortization",
+    "writedown", "writedowns", "writeoff", "writeoffs",
+    "deduction", "deductions",
+    "repurchase", "repurchases",
+    "decrease",          # guarded by "increase" exclusion
+    "withholding",
 )
+
+_CREDIT_DIRECTIONAL_TERMS = (
+    "contra",
+    "treasury",          # treasury stock = contra-equity
+)
+
+_DIRECTIONAL_EXCLUSIONS = (
+    "increase",          # blocks IncreaseDecreaseInX cash-flow change items
+    "reconcile",         # blocks AdjustmentsToReconcile* summation parents
+)
+
+_WORD_RE_CACHE: dict[str, re.Pattern[str]] = {}
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _word_match(haystack: str, term: str) -> bool:
+    pat = _WORD_RE_CACHE.get(term)
+    if pat is None:
+        pat = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+        _WORD_RE_CACHE[term] = pat
+    return bool(pat.search(haystack))
 
 
 def _is_directional_hint(local_name: str, label: Optional[str], balance: str) -> bool:
-    haystack = f"{local_name} {label or ''}".lower()
-    if balance == "debit" and any(k in haystack for k in _DIRECTIONAL_KEYWORDS):
-        return True
-    if balance == "credit" and "contra" in haystack:
-        return True
+    # Split camelCase local names so \bword\b boundaries fire:
+    # "LossOnDisposal" -> "Loss On Disposal".
+    split_local = _CAMEL_SPLIT_RE.sub(" ", local_name)
+    haystack = f"{label or ''} {split_local}"
+    if any(_word_match(haystack, exc) for exc in _DIRECTIONAL_EXCLUSIONS):
+        return False
+    if balance == "debit":
+        return any(_word_match(haystack, t) for t in _DEBIT_DIRECTIONAL_TERMS)
+    if balance == "credit":
+        return any(_word_match(haystack, t) for t in _CREDIT_DIRECTIONAL_TERMS)
     return False
 
 

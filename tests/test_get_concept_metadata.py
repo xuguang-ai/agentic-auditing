@@ -1,6 +1,6 @@
 import os
 import pytest
-from src.auditmcp import get_concept_metadata
+from src.auditmcp import _is_directional_hint, get_concept_metadata
 
 
 @pytest.fixture(autouse=True)
@@ -83,3 +83,50 @@ def test_taxonomy_fallback_resolves_standard_gaap_concept(mini_filing_dir):
     assert md2.source == "taxonomy"
     assert md2.label == "Non Calc Item"
     assert md2.period_type == "duration"
+
+
+# ---------------------------------------------------------------------------
+# _is_directional_hint — tiered keyword + balance + exclusion matching
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "local_name, label, balance, expected",
+    [
+        # --- debit-side directional concepts (should fire) -----------------
+        ("LossOnDisposal", "Loss on Disposal", "debit", True),
+        ("DepreciationAndAmortization", "Depreciation and Amortization", "debit", True),
+        ("ImpairmentOfGoodwill", "Impairment of Goodwill", "debit", True),
+        ("PaymentsForRepurchaseOfCommonStock",
+         "Payments for Repurchase of Common Stock", "debit", True),
+        # The case the smoke run missed: "Decrease" in label, debit balance.
+        ("AdjustmentsRelatedToTaxWithholdingForShareBasedCompensation",
+         "Share-Based Payment Arrangement, Decrease for Tax Withholding Obligation",
+         "debit", True),
+
+        # --- credit-side contra concepts (should fire) ---------------------
+        ("TreasuryStockValue", "Treasury Stock, Value", "credit", True),
+
+        # --- exclusion: change-of-balance concepts (MUST NOT fire) ---------
+        # "Decrease" appears but so does "Increase" — cash-flow change item.
+        ("IncreaseDecreaseInAccountsReceivable",
+         "Increase (Decrease) in Accounts Receivable", "debit", False),
+        ("IncreaseDecreaseInInventories",
+         "Increase (Decrease) in Inventories", "debit", False),
+
+        # --- exclusion: reconciliation summation parent (MUST NOT fire) ---
+        ("AdjustmentsToReconcileNetIncomeLossToCashProvidedByUsedInOperatingActivities",
+         "Adjustments to Reconcile Net Income (Loss) to Cash Provided by (Used in) Operating Activities",
+         "debit", False),
+
+        # --- neutral / non-directional (should not fire) -------------------
+        ("AssetsCurrent", "Assets, Current", "debit", False),
+        ("Liabilities", "Liabilities", "credit", False),
+        ("StockholdersEquity", "Equity, Attributable to Parent", "credit", False),
+
+        # --- unknown balance never fires ----------------------------------
+        ("LossOnDisposal", "Loss on Disposal", "unknown", False),
+        ("LossOnDisposal", "Loss on Disposal", "none", False),
+    ],
+)
+def test_directional_hint(local_name, label, balance, expected):
+    assert _is_directional_hint(local_name, label, balance) is expected
