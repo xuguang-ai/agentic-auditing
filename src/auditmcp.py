@@ -1,6 +1,26 @@
 """FastMCP server exposing XBRL auditing primitives."""
 from __future__ import annotations
 
+import functools
+import json
+import os
+import re
+import xml.etree.ElementTree as ET
+from calendar import monthrange
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, Optional
+
+from fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+try:
+    import logfire
+    logfire.configure(service_name="auditmcp")
+    logfire.instrument_mcp()
+except Exception:
+    pass
+
 
 def _normalize_concept(concept_id: str) -> str:
     """Normalize a concept ID to `prefix:LocalName` form.
@@ -24,11 +44,6 @@ def _to_underscore_form(concept_id: str) -> str:
     """Return the `prefix_LocalName` form used in XBRL href fragments."""
     return _normalize_concept(concept_id).replace(":", "_", 1)
 
-
-import re
-from calendar import monthrange
-from dataclasses import dataclass
-from typing import Literal
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _RANGE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$")
@@ -82,10 +97,8 @@ def _parse_period(period: str) -> ParsedPeriod:
 
 
 # ---------------------------------------------------------------------------
-# Pydantic return models (Task 5)
+# Pydantic return models
 # ---------------------------------------------------------------------------
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
 
 
 class FilingLocation(BaseModel):
@@ -154,12 +167,8 @@ class WriteResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Instance-document parser (Task 6)
+# Instance-document parser
 # ---------------------------------------------------------------------------
-import functools
-import xml.etree.ElementTree as ET
-from pathlib import Path
-
 
 # Namespace URIs that appear in instance documents we need to recognize.
 _XBRLI_NS = "http://www.xbrl.org/2003/instance"
@@ -204,7 +213,7 @@ def _parse_instance_cached(htm_path: str) -> _ParsedInstance:
     # ET does not expose xmlns: attributes via root.attrib; iterparse with
     # "start-ns" events is the only reliable way to capture them.
     uri_to_prefix: dict[str, str] = {}
-    for event, (prefix, uri) in ET.iterparse(htm_path, events=("start-ns",)):
+    for _event, (prefix, uri) in ET.iterparse(htm_path, events=("start-ns",)):
         if prefix:  # skip the default namespace (empty prefix)
             uri_to_prefix[uri] = prefix
 
@@ -314,9 +323,6 @@ def _parse_cal(cal_path: str) -> tuple[_CalArc, ...]:
     return _parse_cal_cached(str(Path(cal_path).resolve()))
 
 
-import json
-
-
 @functools.lru_cache(maxsize=32)
 def _parse_xsd_cached(xsd_path: str) -> dict[str, dict[str, str]]:
     """Parse an extension schema, returning `{local_name: {balance, periodType}}`."""
@@ -370,17 +376,8 @@ def _load_taxonomy_core(taxonomy_dir: str) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
-# FastMCP server init (Task 9)
+# FastMCP server init
 # ---------------------------------------------------------------------------
-import os
-from fastmcp import FastMCP
-
-try:
-    import logfire
-    logfire.configure(service_name="auditmcp")
-    logfire.instrument_mcp()
-except Exception:
-    pass
 
 mcp = FastMCP("XBRL Auditing Tools")
 
@@ -633,13 +630,12 @@ def get_concept_metadata(
 
 
 # ---------------------------------------------------------------------------
-# Task 13: write_audit_result
+# write_audit_result
 # ---------------------------------------------------------------------------
-import re as _re
 
 
 def _sanitize_model(model: str) -> str:
-    return _re.sub(r"[^A-Za-z0-9._-]", "-", model)
+    return re.sub(r"[^A-Za-z0-9._-]", "-", model)
 
 
 @mcp.tool(
